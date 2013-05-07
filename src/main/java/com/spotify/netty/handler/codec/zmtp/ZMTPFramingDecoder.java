@@ -29,133 +29,144 @@ import static com.spotify.netty.handler.codec.zmtp.ZMTPUtils.FINAL_FLAG;
 
 /**
  * Netty FrameDecoder for zmtp protocol
- *
- * Decodes ZMTP frames into a ZMTPMessage - will return a ZMTPMessage as a message event
+ * 
+ * Decodes ZMTP frames into a ZMTPMessage - will return a ZMTPMessage as a
+ * message event
  */
 public class ZMTPFramingDecoder extends FrameDecoder {
 
-  private final ZMTPMessageParser parser;
-  private final ZMTPSession session;
-  private ChannelFuture handshakeFuture;
+	private final ZMTPMessageParser parser;
+	private final ZMTPSession session;
+	private ChannelFuture handshakeFuture;
 
-  /**
-   * Creates a new decoder
-   */
-  public ZMTPFramingDecoder(final ZMTPSession session) {
-    this.session = session;
-    this.parser = new ZMTPMessageParser(session.isEnveloped());
-  }
+	/**
+	 * Creates a new decoder
+	 */
+	public ZMTPFramingDecoder(final ZMTPSession session) {
+		this.session = session;
+		this.parser = new ZMTPMessageParser(session.isEnveloped());
+	}
 
-  /**
-   * Sends my local identity
-   */
-  private void sendIdentity(final Channel channel) {
-    final ChannelBuffer msg;
+	/**
+	 * Sends my local identity
+	 */
+	private void sendIdentity(final Channel channel) {
+		final ChannelBuffer msg;
 
-    if (session.useLocalIdentity()) {
-      // send session current identity
-      msg = ChannelBuffers.dynamicBuffer(2 + session.getLocalIdentity().length);
+		if (session.useLocalIdentity()) {
+			// send session current identity
+			msg = ChannelBuffers.dynamicBuffer(2 + session.getLocalIdentity().length);
 
-      ZMTPUtils.encodeLength(1 + session.getLocalIdentity().length, msg);
-      msg.writeByte(FINAL_FLAG);
-      msg.writeBytes(session.getLocalIdentity());
-    } else {
-      msg = ChannelBuffers.dynamicBuffer(2);
-      // Anonymous identity
-      msg.writeByte(1);
-      msg.writeByte(FINAL_FLAG);
-    }
+			ZMTPUtils.encodeLength(1 + session.getLocalIdentity().length, msg);
+			msg.writeByte(FINAL_FLAG);
+			msg.writeBytes(session.getLocalIdentity());
+		} else {
+			msg = ChannelBuffers.dynamicBuffer(2);
+			// Anonymous identity
+			msg.writeByte(1);
+			msg.writeByte(FINAL_FLAG);
+		}
 
-    // Send identity message
-    channel.write(msg);
-  }
+		// Send identity message
+		channel.write(msg);
+	}
+	
 
-  /**
-   * Parses the remote zmtp identity received
-   */
-  private boolean handleRemoteIdentity(final ChannelBuffer buffer) {
-    buffer.markReaderIndex();
+	/**
+	 * Parses the remote zmtp identity received
+	 */
+	private boolean handleRemoteIdentity(final ChannelBuffer buffer) {
+		buffer.markReaderIndex();
 
-    final long len = ZMTPUtils.decodeLength(buffer);
+		final long len = ZMTPUtils.decodeLength(buffer);
 
-    // Bail out if there's not enough data
-    if (len == -1 || buffer.readableBytes() < len) {
-      buffer.resetReaderIndex();
-      return false;
-    }
+		// Bail out if there's not enough data
+		if (len == -1 || buffer.readableBytes() < len) {
+			buffer.resetReaderIndex();
+			return false;
+		}
 
-    final int flags = buffer.readByte();
+		final int flags = buffer.readByte();
 
-    // More flag should not be set (TODO: is this true?)
-    if ((flags & ZMTPUtils.MORE_FLAG) == ZMTPUtils.MORE_FLAG) {
-      handshakeFuture.setFailure(new ZMTPException(
-          "Expected identity from remote side but got a frame with MORE flag set."));
-    }
+		// More flag should not be set (TODO: is this true?)
+		if ((flags & ZMTPUtils.MORE_FLAG) == ZMTPUtils.MORE_FLAG) {
+			handshakeFuture.setFailure(new ZMTPException(
+					"Expected identity from remote side but got a frame with MORE flag set."));
+		}
 
-    if (len == 1) {
-      // Anonymous identity
-      session.setRemoteIdentity(null);
-    } else {
-      // Read identity from remote
-      final byte[] identity = new byte[(int) len - 1];
-      buffer.readBytes(identity);
+		if (len == 1) {
+			// Anonymous identity
+			session.setRemoteIdentity(null);
+		} else {
+			// Read identity from remote
+			final byte[] identity = new byte[(int) len - 1];
+			buffer.readBytes(identity);
 
-      // Anonymous identity
-      session.setRemoteIdentity(identity);
-    }
+			// Anonymous identity
+			session.setRemoteIdentity(identity);
+		}
 
-    handshakeFuture.setSuccess();
+		handshakeFuture.setSuccess();
 
-    return true;
-  }
+		return true;
+	}
 
-  /**
-   * Resposible for decoding incomming data to zmtp frames
-   */
-  @Override
-  protected Object decode(
-      final ChannelHandlerContext ctx, final Channel channel, final ChannelBuffer buffer)
-      throws Exception {
-    if (buffer.readableBytes() < 2) {
-      return null;
-    }
+	/**
+	 * Resposible for decoding incomming data to zmtp frames
+	 */
+	@Override
+	protected Object decode(final ChannelHandlerContext ctx, final Channel channel, final ChannelBuffer buffer)
+			throws Exception {
+		if (buffer.readableBytes() < 2) {
+			return null;
+		}
 
-    if (session.getRemoteIdentity() == null) {
-      // Should be first packet received from host
-      if (!handleRemoteIdentity(buffer)) {
-        return null;
-      }
-    }
+		if (session.getRemoteIdentity() == null) {
+			// Should be first packet received from host
+			if (!handleRemoteIdentity(buffer)) {
+				return null;
+			}
+		}
 
-    // Parse incoming frames
-    final ZMTPMessage message = parser.parse(buffer);
-    if (message == null) {
-      return null;
-    }
+		// Parse incoming frames
+		final ZMTPMessage message = parser.parse(buffer);
+		if (message == null) {
+			return null;
+		}
 
-    return new ZMTPIncomingMessage(session, message);
-  }
+		return new ZMTPIncomingMessage(session, message);
+	}
 
-  @Override
-  public void channelConnected(final ChannelHandlerContext ctx, final ChannelStateEvent e)
-      throws Exception {
-    // Store channel in the session
-    this.session.setChannel(e.getChannel());
+	@Override
+	public void channelConnected(final ChannelHandlerContext ctx, final ChannelStateEvent e) throws Exception {
+		// Store channel in the session
+		this.session.setChannel(e.getChannel());
 
-    handshake(ctx.getChannel()).addListener(new ChannelFutureListener() {
-      @Override
-      public void operationComplete(final ChannelFuture future) throws Exception {
-        ctx.sendUpstream(e);
-      }
-    });
-  }
+		handshake(ctx.getChannel()).addListener(new ChannelFutureListener() {
+			@Override
+			public void operationComplete(final ChannelFuture future) throws Exception {
+				ctx.sendUpstream(e);
+			}
+		});
+	}
 
-  private ChannelFuture handshake(final Channel channel) {
-    handshakeFuture = Channels.future(channel);
+	private ChannelFuture handshake(final Channel channel) {
+		handshakeFuture = Channels.future(channel);
 
-    // Send our identity
-    sendIdentity(channel);
+		// TODO send greeting - start with  revision 0x01
+		sendGreeting(channel);
+		// Send our identity
+		sendIdentity(channel);
 
-    return handshakeFuture;
-  }
+		return handshakeFuture;
+	}
+
+	/**
+	 * Sends the greeting message.
+	 * @param channel - current channel
+	 */
+	private void sendGreeting(Channel channel) {
+		// TODO Auto-generated method stub
+		
+	}
 }

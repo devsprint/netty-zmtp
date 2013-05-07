@@ -27,30 +27,29 @@ import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
  */
 public class ZMTPFramingEncoder extends OneToOneEncoder {
 
-  private final ZMTPSession session;
+	private final ZMTPSession session;
 
-  public ZMTPFramingEncoder(final ZMTPSession session) {
-    this.session = session;
-  }
+	public ZMTPFramingEncoder(final ZMTPSession session) {
+		this.session = session;
+	}
 
-  @Override
-  protected Object encode(final ChannelHandlerContext channelHandlerContext, final Channel channel,
-                          final Object o)
-      throws Exception {
-    if (!(o instanceof ZMTPMessage)) {
-      return o;
-    }
+	@Override
+	protected Object encode(final ChannelHandlerContext channelHandlerContext, final Channel channel, final Object o)
+			throws Exception {
+		if (!(o instanceof ZMTPMessage)) {
+			return o;
+		}
 
-    // TODO (dano): integrate with write batching to avoid buffer creation and reduce garbage
+		// TODO (dano): integrate with write batching to avoid buffer creation
+		// and reduce garbage
 
-    final ZMTPMessage message = (ZMTPMessage) o;
+		final ZMTPMessage message = (ZMTPMessage) o;
 
-    final ChannelBuffer buffer = ChannelBuffers.buffer(
-        ZMTPUtils.messageSize(message, session.isEnveloped()));
+		final ChannelBuffer buffer = ChannelBuffers.buffer(ZMTPUtils.messageSize(message, session.isEnveloped()));
 
-    ZMTPUtils.writeMessage(message, buffer, session.isEnveloped());
+		ZMTPUtils.writeMessage(message, buffer, session.isEnveloped());
 
-    return buffer;
-  }
+		return buffer;
+	}
 
 }
