@@ -36,13 +36,13 @@ import static com.spotify.netty.handler.codec.zmtp.ZMTPUtils.FINAL_FLAG;
 public class ZMTPFramingDecoder extends FrameDecoder {
 
 	private final ZMTPMessageParser parser;
-	private final ZMTPSession session;
+	private final AbstractZMTPSession session;
 	private ChannelFuture handshakeFuture;
 
 	/**
 	 * Creates a new decoder
 	 */
-	public ZMTPFramingDecoder(final ZMTPSession session) {
+	public ZMTPFramingDecoder(final AbstractZMTPSession session) {
 		this.session = session;
 		this.parser = new ZMTPMessageParser(session.isEnveloped());
 	}
@@ -51,26 +51,31 @@ public class ZMTPFramingDecoder extends FrameDecoder {
 	 * Sends my local identity
 	 */
 	private void sendIdentity(final Channel channel) {
-		final ChannelBuffer msg;
 
-		if (session.useLocalIdentity()) {
-			// send session current identity
-			msg = ChannelBuffers.dynamicBuffer(2 + session.getLocalIdentity().length);
+		if (session.getRevision() == ZMTPRevision.ZMTP_10) {
+			final ChannelBuffer msg;
+			if (session.useLocalIdentity()) {
+				// send session current identity
+				msg = ChannelBuffers.dynamicBuffer(2 + session.getLocalIdentity().length);
 
-			ZMTPUtils.encodeLength(1 + session.getLocalIdentity().length, msg);
-			msg.writeByte(FINAL_FLAG);
-			msg.writeBytes(session.getLocalIdentity());
-		} else {
-			msg = ChannelBuffers.dynamicBuffer(2);
-			// Anonymous identity
-			msg.writeByte(1);
-			msg.writeByte(FINAL_FLAG);
+				ZMTPUtils.encodeLength(1 + session.getLocalIdentity().length, msg);
+				msg.writeByte(FINAL_FLAG);
+				msg.writeBytes(session.getLocalIdentity());
+			} else {
+				msg = ChannelBuffers.dynamicBuffer(2);
+				// Anonymous identity
+				msg.writeByte(1);
+				msg.writeByte(FINAL_FLAG);
+			}
+			// Send identity message
+			channel.write(msg);
 		}
 
-		// Send identity message
-		channel.write(msg);
+		if (session.getRevision() == ZMTPRevision.ZMTP_20) {
+			sendGreeting(channel);
+		}
+
 	}
-	
 
 	/**
 	 * Parses the remote zmtp identity received
@@ -153,8 +158,6 @@ public class ZMTPFramingDecoder extends FrameDecoder {
 	private ChannelFuture handshake(final Channel channel) {
 		handshakeFuture = Channels.future(channel);
 
-		// TODO send greeting - start with  revision 0x01
-		sendGreeting(channel);
 		// Send our identity
 		sendIdentity(channel);
 
@@ -163,10 +166,11 @@ public class ZMTPFramingDecoder extends FrameDecoder {
 
 	/**
 	 * Sends the greeting message.
-	 * @param channel - current channel
+	 * 
+	 * @param channel
+	 *            - current channel
 	 */
 	private void sendGreeting(Channel channel) {
-		// TODO Auto-generated method stub
-		
+		// TODO: compose the greating message.
 	}
 }

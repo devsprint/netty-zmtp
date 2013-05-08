@@ -47,4 +47,9 @@ public class ZMTPSession extends AbstractZMTPSession {
 		return (type == ZMTPConnectionType.Addressed);
 
 	}
+
+	@Override
+	public ZMTPRevision getRevision() {
+		return ZMTPRevision.ZMTP_10;
+	}
 }

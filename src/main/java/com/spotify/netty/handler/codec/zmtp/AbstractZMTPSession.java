@@ -23,6 +23,16 @@ public abstract class AbstractZMTPSession {
 	}
 
 	/**
+	 * Helper to determine if messages in this session are enveloped
+	 */
+	public abstract boolean isEnveloped();
+	
+	/**
+	 * @return revision number.
+	 */
+	public abstract ZMTPRevision getRevision();
+
+	/**
 	 * @return The local address of the session
 	 */
 	public SocketAddress getLocalAddress() {
@@ -35,12 +45,6 @@ public abstract class AbstractZMTPSession {
 	public SocketAddress getRemoteAddress() {
 		return channel.getRemoteAddress();
 	}
-
-	/**
-	 * Helper to determine if messages in this session are enveloped
-	 */
-	public abstract boolean isEnveloped();
-
 
 	/**
 	 * Get the remote session id (can be used for persistent queuing)

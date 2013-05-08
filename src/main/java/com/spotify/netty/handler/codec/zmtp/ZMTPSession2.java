@@ -7,7 +7,6 @@ public class ZMTPSession2 extends AbstractZMTPSession {
 	private final ZMTPSocketType type;
 
 	public static final int[] SIGNATURE = { 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f };
-	public static final byte REVISION = 0x01;
 
 	public ZMTPSession2(final ZMTPSocketType type) {
 		this(type, null);
@@ -33,6 +32,11 @@ public class ZMTPSession2 extends AbstractZMTPSession {
 	 */
 	public boolean isEnveloped() {
 		return (type == ZMTPSocketType.REQ);
+	}
+
+	@Override
+	public ZMTPRevision getRevision() {
+		return ZMTPRevision.ZMTP_20;
 	}
 
 }
