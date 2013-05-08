@@ -35,67 +35,64 @@ import java.util.concurrent.Executors;
  */
 public abstract class ZMTPTestConnector {
 
-  public ZMQ.Context context;
-  public ZMQ.Socket serverSocket;
+	public ZMQ.Context context;
+	public ZMQ.Socket serverSocket;
 
-  boolean receivedMessage = false;
+	boolean receivedMessage = false;
 
-  public abstract void preConnect(ZMQ.Socket socket);
+	public abstract void preConnect(ZMQ.Socket socket);
 
-  public abstract void afterConnect(ZMQ.Socket socket, ChannelFuture future);
+	public abstract void afterConnect(ZMQ.Socket socket, ChannelFuture future);
 
-  public abstract boolean onMessage(ZMTPIncomingMessage msg);
+	public abstract boolean onMessage(ZMTPIncomingMessage msg);
 
-  public boolean connectAndReceive(final String ip, final int port, final int serverType) {
-    context = ZMQ.context(1);
-    serverSocket = context.socket(serverType);
+	public boolean connectAndReceive(final String ip, final int port, final int serverType) {
+		context = ZMQ.context(1);
+		serverSocket = context.socket(serverType);
 
-    preConnect(serverSocket);
+		preConnect(serverSocket);
 
-    serverSocket.bind("tcp://" + ip + ":" + port);
+		serverSocket.bind("tcp://" + ip + ":" + port);
 
-    // Configure the client.
-    final ClientBootstrap bootstrap =
-        new ClientBootstrap(new NioClientSocketChannelFactory(Executors.newCachedThreadPool(),
-                                                              Executors.newCachedThreadPool()));
+		// Configure the client.
+		final ClientBootstrap bootstrap = new ClientBootstrap(new NioClientSocketChannelFactory(
+				Executors.newCachedThreadPool(), Executors.newCachedThreadPool()));
 
-    // Set up the pipeline factory.
-    bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-      public ChannelPipeline getPipeline() throws Exception {
-        final ZMTPSession session = new ZMTPSession(ZMTPConnectionType.Addressed);
-        return Channels.pipeline(
-            new ZMTPFramingDecoder(session),
-            new OneToOneDecoder() {
-              @Override
-              protected Object decode(final ChannelHandlerContext ctx, final Channel channel,
-                                      final Object msg) throws Exception {
-                if (onMessage((ZMTPIncomingMessage) msg)) {
-                  receivedMessage = true;
-                  channel.close();
-                }
+		// Set up the pipeline factory.
+		bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
+			public ChannelPipeline getPipeline() throws Exception {
+				final ZMTPSession session = new ZMTPSession(ZMTPConnectionType.Addressed);
+				return Channels.pipeline(new ZMTPFramingDecoder(session), new OneToOneDecoder() {
+					@Override
+					protected Object decode(final ChannelHandlerContext ctx, final Channel channel, final Object msg)
+							throws Exception {
+						if (onMessage((ZMTPIncomingMessage) msg)) {
+							receivedMessage = true;
+							channel.close();
+						}
 
-                return null;
-              }
-            });
-      }
-    });
+						return null;
+					}
+				});
+			}
+		});
 
-    // Start the connection attempt.
-    final ChannelFuture future = bootstrap.connect(new InetSocketAddress(ip, port));
+		// Start the connection attempt.
+		final ChannelFuture future = bootstrap.connect(new InetSocketAddress(ip, port));
 
-    future.awaitUninterruptibly();
+		future.awaitUninterruptibly();
 
-    afterConnect(serverSocket, future);
+		afterConnect(serverSocket, future);
 
-    // Wait until the connection is closed or the connection attempt fails.
-    future.getChannel().getCloseFuture().awaitUninterruptibly();
+		// Wait until the connection is closed or the connection attempt fails.
+		future.getChannel().getCloseFuture().awaitUninterruptibly();
 
-    // Shut down thread pools to exit.
-    bootstrap.releaseExternalResources();
+		// Shut down thread pools to exit.
+		bootstrap.releaseExternalResources();
 
-    serverSocket.close();
-    context.term();
+		serverSocket.close();
+		context.term();
 
-    return receivedMessage;
-  }
+		return receivedMessage;
+	}
 }

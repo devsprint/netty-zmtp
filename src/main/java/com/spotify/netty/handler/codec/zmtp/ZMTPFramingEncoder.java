@@ -27,9 +27,9 @@ import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
  */
 public class ZMTPFramingEncoder extends OneToOneEncoder {
 
-	private final ZMTPSession session;
+	private final AbstractZMTPSession session;
 
-	public ZMTPFramingEncoder(final ZMTPSession session) {
+	public ZMTPFramingEncoder(final AbstractZMTPSession session) {
 		this.session = session;
 	}
 

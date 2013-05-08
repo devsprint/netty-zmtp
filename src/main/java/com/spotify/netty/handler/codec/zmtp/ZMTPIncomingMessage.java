@@ -21,10 +21,10 @@ package com.spotify.netty.handler.codec.zmtp;
  */
 public class ZMTPIncomingMessage {
 
-  private final ZMTPSession session;
+  private final AbstractZMTPSession session;
   private final ZMTPMessage message;
 
-  public ZMTPIncomingMessage(final ZMTPSession session, final ZMTPMessage message) {
+  public ZMTPIncomingMessage(final AbstractZMTPSession session, final ZMTPMessage message) {
     this.session = session;
     this.message = message;
   }
@@ -34,7 +34,7 @@ public class ZMTPIncomingMessage {
    *
    * @return The session this message was received on.
    */
-  public ZMTPSession getSession() {
+  public AbstractZMTPSession getSession() {
     return session;
   }
 
