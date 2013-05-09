@@ -32,6 +32,8 @@ public class ZMTPUtils {
   public static final byte MORE_FLAG = 0x1;
   public static final byte FINAL_FLAG = 0x0;
   public static final ZMTPFrame DELIMITER = ZMTPFrame.create();
+  
+  public static final byte[] ZMTP_20_SIGNATURE = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f };
 
   /**
    * Helper to decode a ZeroMQ length field

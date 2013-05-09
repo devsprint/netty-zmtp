@@ -2,11 +2,14 @@ package com.spotify.netty.handler.codec.zmtp;
 
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * ZMTP/2.0 session.
+ * @author gciuloaica
+ *
+ */
 public class ZMTPSession2 extends AbstractZMTPSession {
 
 	private final ZMTPSocketType type;
-
-	public static final int[] SIGNATURE = { 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f };
 
 	public ZMTPSession2(final ZMTPSocketType type) {
 		this(type, null);

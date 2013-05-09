@@ -81,38 +81,74 @@ public class ZMTPFramingDecoder extends FrameDecoder {
 	 * Parses the remote zmtp identity received
 	 */
 	private boolean handleRemoteIdentity(final ChannelBuffer buffer) {
-		buffer.markReaderIndex();
+		if (session.getRevision() == ZMTPRevision.ZMTP_10) {
 
-		final long len = ZMTPUtils.decodeLength(buffer);
+			buffer.markReaderIndex();
 
-		// Bail out if there's not enough data
-		if (len == -1 || buffer.readableBytes() < len) {
-			buffer.resetReaderIndex();
-			return false;
+			final long len = ZMTPUtils.decodeLength(buffer);
+
+			// Bail out if there's not enough data
+			if (len == -1 || buffer.readableBytes() < len) {
+				buffer.resetReaderIndex();
+				return false;
+			}
+
+			final int flags = buffer.readByte();
+
+			// More flag should not be set (TODO: is this true?)
+			if ((flags & ZMTPUtils.MORE_FLAG) == ZMTPUtils.MORE_FLAG) {
+				handshakeFuture.setFailure(new ZMTPException(
+						"Expected identity from remote side but got a frame with MORE flag set."));
+			}
+
+			if (len == 1) {
+				// Anonymous identity
+				session.setRemoteIdentity(null);
+			} else {
+				// Read identity from remote
+				final byte[] identity = new byte[(int) len - 1];
+				buffer.readBytes(identity);
+
+				// Anonymous identity
+				session.setRemoteIdentity(identity);
+			}
+
+			handshakeFuture.setSuccess();
 		}
 
-		final int flags = buffer.readByte();
+		if (session.getRevision() == ZMTPRevision.ZMTP_20) {
+			// check signature, revision, socket-type
+			buffer.markReaderIndex();
+			// Bail out if there's not enough data
+			if (buffer.readableBytes() < 1) {
+				buffer.resetReaderIndex();
+				return false;
+			}
 
-		// More flag should not be set (TODO: is this true?)
-		if ((flags & ZMTPUtils.MORE_FLAG) == ZMTPUtils.MORE_FLAG) {
-			handshakeFuture.setFailure(new ZMTPException(
-					"Expected identity from remote side but got a frame with MORE flag set."));
+			if (isSignatureValid(buffer)) {
+				final byte revision = buffer.readByte();
+				if (revision != ZMTPRevision.ZMTP_20.getRevision()) {
+					// TODO: revision is not the same - should we handle it?
+					buffer.resetReaderIndex();
+					return false;
+				}
+				ZMTPSession2 zmtp2 = (ZMTPSession2) session;
+				if (canAcceptConnection(buffer, zmtp2.getConnectionType())) {
+					final long len = ZMTPUtils.decodeLength(buffer);
+					// Read identity from remote
+					final byte[] identity = new byte[(int) len - 1];
+					buffer.readBytes(identity);
+
+					// Anonymous identity
+					session.setRemoteIdentity(identity);
+					handshakeFuture.setSuccess();
+				} else {
+					buffer.resetReaderIndex();
+					return false;
+				}
+			}
+
 		}
-
-		if (len == 1) {
-			// Anonymous identity
-			session.setRemoteIdentity(null);
-		} else {
-			// Read identity from remote
-			final byte[] identity = new byte[(int) len - 1];
-			buffer.readBytes(identity);
-
-			// Anonymous identity
-			session.setRemoteIdentity(identity);
-		}
-
-		handshakeFuture.setSuccess();
-
 		return true;
 	}
 
@@ -171,6 +207,117 @@ public class ZMTPFramingDecoder extends FrameDecoder {
 	 *            - current channel
 	 */
 	private void sendGreeting(Channel channel) {
-		// TODO: compose the greating message.
+		final ChannelBuffer msg;
+		// TODO: it is still possible to use anonymous?
+		if (session.useLocalIdentity()) {
+			// send session current greeting
+			msg = ChannelBuffers.dynamicBuffer(14 + session.getLocalIdentity().length);
+
+			msg.writeByte(0xFF);
+			msg.writeBytes(ZMTPUtils.ZMTP_20_SIGNATURE);
+			msg.writeByte(session.getRevision().getRevision());
+			ZMTPSession2 session2 = (ZMTPSession2) session;
+			msg.writeByte(session2.getConnectionType().getEncodedValue());
+			ZMTPUtils.encodeLength(1 + session.getLocalIdentity().length, msg);
+			msg.writeByte(FINAL_FLAG);
+			msg.writeBytes(session.getLocalIdentity());
+		} else {
+			msg = ChannelBuffers.dynamicBuffer(2);
+			// Anonymous identity
+			msg.writeByte(1);
+			msg.writeByte(FINAL_FLAG);
+		}
+		// Send identity message
+		channel.write(msg);
+
+	}
+
+	/**
+	 * Is signature of incoming message valid?
+	 * 
+	 * @param buffer
+	 *            - received buffer
+	 * @return true if signature is valid, false otherwise
+	 */
+	private boolean isSignatureValid(final ChannelBuffer buffer) {
+		final int firstByteOfSignature = buffer.readByte();
+		if (firstByteOfSignature != 0xFF) {
+			buffer.resetReaderIndex();
+			return false;
+		}
+		final long zeros = buffer.readLong();
+		if (zeros != 0L) {
+			buffer.resetReaderIndex();
+			return false;
+		}
+		final byte signatureLastByte = buffer.readByte();
+		if (signatureLastByte != 0x7F) {
+			buffer.resetReaderIndex();
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Check the socket type for the remote host.
+	 * 
+	 * @param buffer
+	 *            - received buffer
+	 * @param connectionType
+	 *            - local socket type
+	 * @return true if the remote socket type can work with local socket type,
+	 *         false otherwise.
+	 * 
+	 * 
+	 *         NOTE: XPUB, XSUB is implemented as PUB,SUB
+	 */
+	private boolean canAcceptConnection(ChannelBuffer buffer, ZMTPSocketType connectionType) {
+		final byte remoteSocketType = buffer.readByte();
+		ZMTPSocketType remoteSocket = ZMTPSocketType.fromByte(remoteSocketType);
+		// PAIR socket accept connections only from PAIR sockets
+		if (connectionType == ZMTPSocketType.PAIR && remoteSocket == ZMTPSocketType.PAIR) {
+			return true;
+		}
+		// PUB socket accepts connection only from a SUB socket
+		if (connectionType == ZMTPSocketType.PUB && remoteSocket == ZMTPSocketType.SUB) {
+			return true;
+		}
+		// SUB sockets accept connections only from a PUB socket
+		if (connectionType == ZMTPSocketType.SUB && remoteSocket == ZMTPSocketType.PUB) {
+			return true;
+		}
+		// REQ sockets accept connections from a REP or ROUTER socket
+		if (connectionType == ZMTPSocketType.REQ
+				&& (remoteSocket == ZMTPSocketType.REP || remoteSocket == ZMTPSocketType.ROUTER)) {
+			return true;
+		}
+		// REP sockets accept connections from a REQ or DEALER socket
+		if (connectionType == ZMTPSocketType.REP
+				&& (remoteSocket == ZMTPSocketType.REQ || remoteSocket == ZMTPSocketType.DEALER)) {
+			return true;
+		}
+
+		// DEALER sockets accept connections from a REP, DEALER or ROUTER socket
+		if (connectionType == ZMTPSocketType.DEALER
+				&& (remoteSocket == ZMTPSocketType.REP || remoteSocket == ZMTPSocketType.DEALER || remoteSocket == ZMTPSocketType.ROUTER)) {
+			return true;
+		}
+
+		// ROUTER sockets accept connections from a REQ, DEALER or ROUTER socket
+		if (connectionType == ZMTPSocketType.ROUTER
+				&& (remoteSocket == ZMTPSocketType.REQ || remoteSocket == ZMTPSocketType.DEALER || remoteSocket == ZMTPSocketType.ROUTER)) {
+			return true;
+		}
+		// PUSH sockets accept connections only from a PULL socket
+		if (connectionType == ZMTPSocketType.PUSH && remoteSocket == ZMTPSocketType.PULL) {
+			return true;
+		}
+
+		// PULL sockets accept connections only from a PUSH socket
+		if (connectionType == ZMTPSocketType.PULL && remoteSocket == ZMTPSocketType.PUSH) {
+			return true;
+		}
+
+		return false;
 	}
 }
